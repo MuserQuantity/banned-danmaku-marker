@@ -1,0 +1,23 @@
+.banned-message {
+  position: relative;
+  background-color: rgba(255, 0, 0, 0.1) !important;
+  border-left: 3px solid #ff4444 !important;
+}
+
+.banned-message::after {
+  content: '禁';
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  background-color: #ff4444;
+  color: white;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 12px;
+}
+
+.banned-message .danmaku-item-right {
+  color: #ff4444 !important;
+}
+

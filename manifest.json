@@ -1,0 +1,27 @@
+{
+  "manifest_version": 3,
+  "name": "B站直播弹幕检测",
+  "version": "1.0",
+  "description": "检测B站直播中被禁的弹幕并标记",
+  "permissions": [
+    "declarativeNetRequest",
+    "declarativeNetRequestWithHostAccess",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://api.live.bilibili.com/*",
+    "*://live.bilibili.com/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["*://live.bilibili.com/*"],
+      "js": ["content.js"],
+      "css": ["styles.css"],
+      "run_at": "document_start"
+    }
+  ],
+  "web_accessible_resources": [{
+    "resources": ["injected.js"],
+    "matches": ["*://live.bilibili.com/*"]
+  }]
+}
