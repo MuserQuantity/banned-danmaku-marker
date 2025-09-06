@@ -3,11 +3,21 @@
   "name": "B站直播弹幕检测",
   "version": "1.0",
   "description": "检测B站直播中被禁的弹幕并标记",
+  "icons": {
+    "16": "icon.png",
+    "48": "icon.png",
+    "128": "icon.png"
+  },
   "permissions": [
-    "declarativeNetRequest",
+    "declarativeNetRequest", 
     "declarativeNetRequestWithHostAccess",
-    "scripting"
+    "scripting",
+    "storage"
   ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "查看已禁弹幕"
+  },
   "host_permissions": [
     "https://api.live.bilibili.com/*",
     "*://live.bilibili.com/*"

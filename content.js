@@ -11,6 +11,251 @@ function injectScript() {
 // 保存被禁弹幕的内容
 const bannedMessages = new Set();
 
+// 弹幕存储功能
+const BannedDanmakuStorage = {
+  // 保存被禁弹幕到storage
+  async saveBannedDanmaku(content) {
+    try {
+      const roomInfo = this.getCurrentRoomInfo();
+      const danmakuRecord = {
+        content: content,
+        timestamp: Date.now(),
+        date: new Date().toLocaleString('zh-CN'),
+        roomId: roomInfo.roomId,
+        upName: roomInfo.upName,
+        roomTitle: roomInfo.roomTitle
+      };
+
+      const result = await chrome.storage.local.get(['bannedDanmakus']);
+      const bannedDanmakus = result.bannedDanmakus || [];
+      
+      // 避免重复存储同样内容的弹幕（同一直播间内）
+      const isDuplicate = bannedDanmakus.some(item => 
+        item.content === content && item.roomId === roomInfo.roomId
+      );
+      
+      if (!isDuplicate) {
+        bannedDanmakus.push(danmakuRecord);
+        await chrome.storage.local.set({ bannedDanmakus });
+        console.log('已保存被禁弹幕到存储:', danmakuRecord);
+      }
+    } catch (error) {
+      console.error('保存被禁弹幕失败:', error);
+    }
+  },
+
+  // 获取当前直播间信息
+  getCurrentRoomInfo() {
+    const roomId = this.getRoomIdFromUrl();
+    const upNameEl = document.querySelector('.room-owner-username');
+    const roomTitleEl = document.querySelector('.live-title');
+    
+    return {
+      roomId: roomId,
+      upName: upNameEl ? upNameEl.textContent.trim() : '未知UP主',
+      roomTitle: roomTitleEl ? roomTitleEl.textContent.trim() : '未知标题'
+    };
+  },
+
+  // 从URL获取房间ID
+  getRoomIdFromUrl() {
+    const urlMatch = window.location.href.match(/live\.bilibili\.com\/(\d+)/);
+    return urlMatch ? urlMatch[1] : 'unknown';
+  },
+
+  // 从storage加载被禁弹幕
+  async loadBannedDanmakus() {
+    try {
+      const result = await chrome.storage.local.get(['bannedDanmakus']);
+      const bannedDanmakus = result.bannedDanmakus || [];
+      const currentRoomId = this.getRoomIdFromUrl();
+      
+      // 只加载当前直播间的被禁弹幕到内存中
+      bannedDanmakus
+        .filter(item => item.roomId === currentRoomId)
+        .forEach(item => bannedMessages.add(item.content));
+      
+      console.log(`已从存储加载 ${bannedMessages.size} 条被禁弹幕`);
+    } catch (error) {
+      console.error('加载被禁弹幕失败:', error);
+    }
+  }
+};
+
+// 悬浮查看按钮功能
+const FloatingButton = {
+  button: null,
+  panel: null,
+  
+  // 创建悬浮按钮
+  createButton() {
+    if (this.button) return;
+    
+    this.button = document.createElement('div');
+    this.button.id = 'banned-danmaku-float-btn';
+    this.button.innerHTML = '🚫';
+    this.button.title = '查看被禁弹幕';
+    this.button.style.cssText = `
+      position: fixed;
+      top: 50%;
+      right: 20px;
+      width: 50px;
+      height: 50px;
+      background: #ff6b6b;
+      color: white;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      z-index: 10000;
+      font-size: 20px;
+      box-shadow: 0 4px 12px rgba(255, 107, 107, 0.4);
+      transition: all 0.3s ease;
+      user-select: none;
+    `;
+    
+    this.button.addEventListener('mouseenter', () => {
+      this.button.style.transform = 'scale(1.1)';
+      this.button.style.boxShadow = '0 6px 16px rgba(255, 107, 107, 0.6)';
+    });
+    
+    this.button.addEventListener('mouseleave', () => {
+      this.button.style.transform = 'scale(1)';
+      this.button.style.boxShadow = '0 4px 12px rgba(255, 107, 107, 0.4)';
+    });
+    
+    this.button.addEventListener('click', () => {
+      this.togglePanel();
+    });
+    
+    document.body.appendChild(this.button);
+  },
+  
+  // 创建弹幕查看面板
+  createPanel() {
+    if (this.panel) return;
+    
+    this.panel = document.createElement('div');
+    this.panel.id = 'banned-danmaku-panel';
+    this.panel.style.cssText = `
+      position: fixed;
+      top: 50%;
+      right: 80px;
+      width: 350px;
+      max-height: 400px;
+      background: white;
+      border-radius: 8px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+      z-index: 10001;
+      transform: translateY(-50%);
+      display: none;
+      overflow: hidden;
+      font-family: 'Microsoft YaHei', Arial, sans-serif;
+    `;
+    
+    document.body.appendChild(this.panel);
+  },
+  
+  // 切换面板显示/隐藏
+  async togglePanel() {
+    if (!this.panel) this.createPanel();
+    
+    if (this.panel.style.display === 'block') {
+      this.panel.style.display = 'none';
+    } else {
+      await this.updatePanel();
+      this.panel.style.display = 'block';
+    }
+  },
+  
+  // 更新面板内容
+  async updatePanel() {
+    try {
+      const result = await chrome.storage.local.get(['bannedDanmakus']);
+      const allDanmakus = result.bannedDanmakus || [];
+      const currentRoomId = BannedDanmakuStorage.getRoomIdFromUrl();
+      
+      // 筛选当前直播间的弹幕
+      const currentRoomDanmakus = allDanmakus
+        .filter(item => item.roomId === currentRoomId)
+        .sort((a, b) => b.timestamp - a.timestamp);
+      
+      const roomInfo = BannedDanmakuStorage.getCurrentRoomInfo();
+      
+      let panelHTML = `
+        <div style="background: #ff6b6b; color: white; padding: 12px 16px; font-size: 14px; font-weight: bold;">
+          当前直播间被禁弹幕
+        </div>
+        <div style="padding: 10px 16px; border-bottom: 1px solid #eee; font-size: 12px; color: #666;">
+          ${roomInfo.upName} · ${roomInfo.roomId}<br>
+          共 ${currentRoomDanmakus.length} 条记录
+        </div>
+        <div style="max-height: 300px; overflow-y: auto;">
+      `;
+      
+      if (currentRoomDanmakus.length === 0) {
+        panelHTML += `
+          <div style="text-align: center; padding: 40px 20px; color: #999; font-size: 12px;">
+            当前直播间暂无被禁弹幕记录
+          </div>
+        `;
+      } else {
+        currentRoomDanmakus.slice(0, 20).forEach(item => { // 最多显示20条
+          panelHTML += `
+            <div style="padding: 10px 16px; border-bottom: 1px solid #f5f5f5;">
+              <div style="font-size: 13px; color: #333; margin-bottom: 4px; word-break: break-all; line-height: 1.4;">
+                ${this.escapeHtml(item.content)}
+              </div>
+              <div style="font-size: 10px; color: #999;">
+                ${item.date}
+              </div>
+            </div>
+          `;
+        });
+        
+        if (currentRoomDanmakus.length > 20) {
+          panelHTML += `
+            <div style="text-align: center; padding: 10px; color: #999; font-size: 11px;">
+              还有 ${currentRoomDanmakus.length - 20} 条记录，点击扩展图标查看全部
+            </div>
+          `;
+        }
+      }
+      
+      panelHTML += `
+        </div>
+        <div style="padding: 10px 16px; text-align: center; border-top: 1px solid #eee;">
+          <button onclick="document.getElementById('banned-danmaku-panel').style.display='none'" 
+                  style="padding: 6px 12px; background: #00a1d6; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 11px;">
+            关闭
+          </button>
+        </div>
+      `;
+      
+      this.panel.innerHTML = panelHTML;
+      
+    } catch (error) {
+      console.error('更新面板内容失败:', error);
+      this.panel.innerHTML = `
+        <div style="background: #ff6b6b; color: white; padding: 12px 16px; font-size: 14px; font-weight: bold;">
+          被禁弹幕面板
+        </div>
+        <div style="text-align: center; padding: 40px 20px; color: #ff4757; font-size: 12px;">
+          加载数据失败
+        </div>
+      `;
+    }
+  },
+  
+  // HTML转义
+  escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+  }
+};
+
 // 监听来自注入脚本的消息
 window.addEventListener('message', function(event) {
   try {
@@ -27,6 +272,8 @@ window.addEventListener('message', function(event) {
         if (content && typeof content === 'string') {
           console.log('检测到被禁弹幕:', content);
           bannedMessages.add(content);
+          // 保存到持久存储
+          BannedDanmakuStorage.saveBannedDanmaku(content);
           setTimeout(() => {
             markBannedMessage(content);
           }, 500);
@@ -124,8 +371,17 @@ function handleUrlChange() {
     lastUrl = currentUrl;
     console.log('页面URL发生变化，重新初始化...');
     bannedMessages.clear(); // 清除之前的被禁弹幕记录
+    // 加载当前直播间的被禁弹幕
+    BannedDanmakuStorage.loadBannedDanmakus();
     injectScript();
     initializeChatObserver();
+    
+    // 重新创建悬浮按钮（如果需要）
+    setTimeout(() => {
+      if (!document.getElementById('banned-danmaku-float-btn')) {
+        FloatingButton.createButton();
+      }
+    }, 1000);
   }
 }
 
@@ -152,12 +408,19 @@ history.replaceState = function() {
 };
 
 // 初始化
-function initialize() {
+async function initialize() {
   try {
     if (!window._injected) {
+      // 加载被禁弹幕数据
+      await BannedDanmakuStorage.loadBannedDanmakus();
       injectScript();
       initializeChatObserver();
       startUrlMonitoring();
+      
+      // 创建悬浮按钮
+      setTimeout(() => {
+        FloatingButton.createButton();
+      }, 2000); // 延迟创建以确保页面完全加载
     }
   } catch (error) {
     console.error('初始化插件时出错:', error);
